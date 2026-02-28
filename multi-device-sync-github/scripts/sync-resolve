@@ -1,0 +1,78 @@
+#!/bin/bash
+# Interactive conflict resolution
+
+set -e
+
+SYNC_REPO="${SYNC_REPO:-$HOME/openclaw-sync}"
+cd "$SYNC_REPO"
+
+# Check if in conflict state
+if [[ ! -f ".sync-conflicts" ]]; then
+    echo "No active conflicts detected."
+    
+    # Check git status just in case
+    if ! git diff --name-only --diff-filter=U | grep -q .; then
+        echo "Repository is clean."
+        exit 0
+    fi
+fi
+
+echo "=== Sync Conflict Resolution ==="
+echo ""
+
+# List conflicted files
+echo "Conflicted files:"
+git diff --name-only --diff-filter=U | while read -r file; do
+    echo "  - $file"
+done
+echo ""
+
+# Options
+echo "Resolution options:"
+echo "  1) Keep LOCAL (your changes)"
+echo "  2) Keep REMOTE (their changes)"
+echo "  3) Merge manually (opens editor)"
+echo "  4) Abort and keep investigating"
+echo ""
+read -p "Choose option (1-4): " choice
+
+case $choice in
+    1)
+        echo "Keeping local changes..."
+        git checkout --ours .
+        git add -A
+        git rebase --continue 2>/dev/null || true
+        ;;
+    2)
+        echo "Keeping remote changes..."
+        git checkout --theirs .
+        git add -A
+        git rebase --continue 2>/dev/null || true
+        ;;
+    3)
+        echo "Opening files for manual merge..."
+        git diff --name-only --diff-filter=U | xargs -I {} sh -c 'echo "=== {} ===" && cat {}'
+        echo ""
+        echo "Edit the files above to resolve conflicts, then run:"
+        echo "  git add -A"
+        echo "  git rebase --continue"
+        echo "  rm .sync-conflicts"
+        exit 0
+        ;;
+    4)
+        echo "Aborted. Conflicts remain."
+        echo "Investigate with: git status"
+        exit 0
+        ;;
+    *)
+        echo "Invalid option"
+        exit 1
+        ;;
+esac
+
+# Clean up conflict markers
+rm -f ".sync-conflicts"
+rm -f ".sync-conflict.log"
+
+echo ""
+echo "✓ Conflicts resolved. Sync resumed."

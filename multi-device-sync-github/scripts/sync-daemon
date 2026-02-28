@@ -1,0 +1,111 @@
+#!/bin/bash
+# Sync daemon - manages background sync process
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SYNC_REPO="${SYNC_REPO:-$HOME/openclaw-sync}"
+PIDFILE="$HOME/.openclaw/sync-daemon.pid"
+LOGFILE="$HOME/.openclaw/sync-daemon.log"
+CONFIG_FILE="$HOME/.config/openclaw/sync-config.yaml"
+
+# Load interval from config
+INTERVAL=300  # default 5 minutes
+if [[ -f "$CONFIG_FILE" ]]; then
+    CONFIG_INTERVAL=$(grep "sync_interval_minutes:" "$CONFIG_FILE" | awk '{print $2}')
+    if [[ -n "$CONFIG_INTERVAL" ]]; then
+        INTERVAL=$((CONFIG_INTERVAL * 60))
+    fi
+fi
+
+start_daemon() {
+    if [[ -f "$PIDFILE" ]] && kill -0 $(cat "$PIDFILE") 2>/dev/null; then
+        echo "Daemon already running (PID: $(cat $PIDFILE))"
+        exit 1
+    fi
+    
+    mkdir -p "$(dirname "$PIDFILE")"
+    
+    # Start in background
+    (
+        exec >> "$LOGFILE" 2>&1
+        echo "=== Sync Daemon Started at $(date) ==="
+        
+        # Initial pull on start
+        if [[ -f "$CONFIG_FILE" ]]; then
+            AUTO_PULL=$(grep "auto_pull_on_start:" "$CONFIG_FILE" | awk '{print $2}')
+            if [[ "$AUTO_PULL" == "true" ]]; then
+                echo "[$(date)] Initial pull..."
+                "$SCRIPT_DIR/sync-pull" || true
+            fi
+        fi
+        
+        # Main loop
+        while true; do
+            sleep "$INTERVAL"
+            
+            # Skip if in conflict state
+            if [[ -f "$SYNC_REPO/.sync-conflicts" ]]; then
+                echo "[$(date)] Conflict state, skipping pull"
+                continue
+            fi
+            
+            # Pull remote changes
+            if ! "$SCRIPT_DIR/sync-pull"; then
+                echo "[$(date)] Pull failed or conflict detected"
+            fi
+        done
+    ) &
+    
+    echo $! > "$PIDFILE"
+    echo "Daemon started (PID: $!, Interval: ${INTERVAL}s)"
+    echo "Log: $LOGFILE"
+}
+
+stop_daemon() {
+    if [[ -f "$PIDFILE" ]]; then
+        PID=$(cat "$PIDFILE")
+        if kill -0 "$PID" 2>/dev/null; then
+            kill "$PID"
+            rm -f "$PIDFILE"
+            echo "Daemon stopped"
+        else
+            rm -f "$PIDFILE"
+            echo "Daemon not running (stale pidfile removed)"
+        fi
+    else
+        echo "Daemon not running"
+    fi
+}
+
+status_daemon() {
+    if [[ -f "$PIDFILE" ]] && kill -0 $(cat "$PIDFILE") 2>/dev/null; then
+        echo "Daemon running (PID: $(cat $PIDFILE))"
+        echo "Log: $LOGFILE"
+        tail -5 "$LOGFILE" 2>/dev/null || echo "No log entries yet"
+    else
+        echo "Daemon not running"
+        rm -f "$PIDFILE" 2>/dev/null
+    fi
+}
+
+case "${1:-}" in
+    start)
+        start_daemon
+        ;;
+    stop)
+        stop_daemon
+        ;;
+    restart)
+        stop_daemon
+        sleep 1
+        start_daemon
+        ;;
+    status)
+        status_daemon
+        ;;
+    *)
+        echo "Usage: sync-daemon {start|stop|restart|status}"
+        exit 1
+        ;;
+esac
