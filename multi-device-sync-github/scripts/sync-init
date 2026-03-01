@@ -99,6 +99,7 @@ paths:
     - "MEMORY.md"
     - "memory/"
     - "skills/"
+    - "IDENTITY.md"
     - "TOOLS.md"
   ignore:
     - "logs/"
@@ -114,7 +115,7 @@ fi
 
 # Setup workspace symlink structure
 echo "Setting up workspace links..."
-for item in SOUL.md USER.md MEMORY.md skills TOOLS.md; do
+for item in SOUL.md USER.md MEMORY.md skills IDENTITY.md TOOLS.md; do
     # Check if sync repo has this file/dir
     if [[ ! -e "$SYNC_REPO/$item" ]]; then
         # Create empty file/dir in sync repo
