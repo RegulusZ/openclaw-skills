@@ -66,7 +66,7 @@ if [[ -d ~/openclaw-skills ]]; then
     cd ~/openclaw-skills
     git pull origin main
 else
-    git clone https://github.com/RegulusZ/openclaw-skills.git ~/openclaw-skills
+    git clone https://github.com/RegulusZ/multi-device-sync-github.git ~/openclaw-skills
 fi
 echo "✓ Skill cloned to ~/openclaw-skills"
 
