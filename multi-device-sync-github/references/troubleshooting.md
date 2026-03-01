@@ -2,21 +2,23 @@
 
 ## Common Issues
 
-### Sync not starting
+### File watcher not found
 
-**Check:**
+**Problem:** `⚠ No file watcher found. Auto-push disabled.`
+
+**Linux:**
 ```bash
-sync-status
+sudo apt-get install inotify-tools
 ```
 
-**If daemon not running:**
+**macOS:**
 ```bash
-sync-daemon start
+brew install fswatch
 ```
 
-**If config missing:**
+After installation, restart the daemon:
 ```bash
-sync-init --device-name <your-device>
+sync-daemon restart
 ```
 
 ### Git authentication failed
@@ -24,9 +26,32 @@ sync-init --device-name <your-device>
 **Problem:** `git push` asks for password or fails with auth error
 
 **Solution:**
-1. Use SSH key auth: `git remote set-url origin git@github.com:USER/REPO.git`
-2. Ensure key is added: `ssh-add -l`
-3. Test: `ssh -T git@github.com`
+1. Use SSH key auth:
+   ```bash
+   git remote set-url origin git@github.com:USER/REPO.git
+   ```
+2. Ensure SSH key is added:
+   ```bash
+   ssh-add -l
+   ```
+3. Test connection:
+   ```bash
+   ssh -T git@github.com
+   ```
+
+### "No remote branch found" on pull
+
+**Problem:** `No remote branch found. Nothing to pull.`
+
+**Cause:** Fresh repo with no commits, or origin/HEAD not set
+
+**Solution:**
+1. Push first commit from another device
+2. Or set HEAD manually:
+   ```bash
+   cd ~/openclaw-sync
+   git remote set-head origin --auto
+   ```
 
 ### Conflict loop
 
@@ -37,7 +62,7 @@ sync-init --device-name <your-device>
 **Solution:**
 - Use device-prefixed memory files (auto-created)
 - Avoid editing shared files (SOUL.md, USER.md) on multiple devices at once
-- Increase sync frequency if needed
+- Increase sync frequency if needed (edit `sync_interval_minutes` in config)
 
 ### Large repo / slow sync
 
@@ -52,20 +77,23 @@ git count-objects -vH
 
 **Solution:**
 - Add large files to `.gitignore`
-- Clean old logs: `git log --oneline | wc -l`
-- Consider git gc: `git gc --aggressive`
+- Clean old commits:
+  ```bash
+  git gc --aggressive
+  ```
 
 ### Daemon stops unexpectedly
 
 **Check logs:**
 ```bash
-tail ~/.openclaw/sync-daemon.log
+tail -f ~/.openclaw/sync-daemon.log
 ```
 
 **Common causes:**
 - Repo deleted or moved
 - Git credentials expired
 - Disk full
+- Network issues
 
 ### Device name collision
 
@@ -75,8 +103,50 @@ tail ~/.openclaw/sync-daemon.log
 ```bash
 # Edit config
 nano ~/.config/openclaw/sync-config.yaml
-# Change device_name, then re-init
+# Change device_name
+
+# Re-initialize (will not overwrite existing files)
 sync-init --device-name NEWNAME
+```
+
+### Symlinks broken
+
+**Problem:** Files in workspace show as broken symlinks
+
+**Cause:** Sync repo was deleted or moved
+
+**Solution:**
+1. Stop daemon: `sync-daemon stop`
+2. Clone repo again: `git clone git@github.com:USER/REPO.git ~/openclaw-sync`
+3. Re-run init: `sync-init --device-name <name>`
+
+### Push fails with "behind remote"
+
+**Problem:** `⚠ Push failed, remote has changes`
+
+**Cause:** Remote has commits you don't have locally
+
+**Solution:**
+The script should auto-pull and retry. If it fails:
+```bash
+cd ~/openclaw-sync
+git pull --rebase origin main
+git push origin main
+```
+
+### Nested git repository warning
+
+**Problem:** `warning: adding embedded git repository`
+
+**Cause:** A skills subdirectory contains its own `.git` folder
+
+**Solution:**
+```bash
+cd ~/openclaw-sync
+# Remove nested .git
+rm -rf skills/some-skill/.git
+# Commit the fix
+git add -A && git commit -m "fix: remove nested git repo"
 ```
 
 ## Debug Mode
@@ -85,6 +155,7 @@ Enable verbose logging:
 ```bash
 export SYNC_DEBUG=1
 sync-daemon restart
+tail -f ~/.openclaw/sync-daemon.log
 ```
 
 ## Manual Recovery
@@ -101,10 +172,37 @@ cp -r ~/openclaw-sync ~/openclaw-sync-backup-$(date +%s)
 # 3. Reset to remote
 cd ~/openclaw-sync
 git fetch origin
-git reset --hard origin/HEAD
+git reset --hard origin/main
 
 # 4. Re-apply local changes manually
+# (from backup)
 
 # 5. Restart
 sync-daemon start
+```
+
+## Check Status
+
+Quick health check:
+```bash
+sync-status
+```
+
+This shows:
+- Daemon status (pull + push watcher)
+- Git status
+- Remote connection
+- Recent commits
+- Conflict state
+
+## Logs
+
+Log file location:
+```
+~/.openclaw/sync-daemon.log
+```
+
+View recent activity:
+```bash
+tail -50 ~/.openclaw/sync-daemon.log
 ```
